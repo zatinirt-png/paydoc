@@ -5,47 +5,23 @@ import { getSession } from "@/lib/session";
 import { COMPANY } from "@/lib/company";
 
 function formatIDR(n: number) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(n);
+  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
 }
 function formatDate(d: Date | string) {
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(d));
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(new Date(d));
 }
 
-const TYPE_LABEL: Record<string, string> = {
-  FREELANCER: "Freelancer",
-  VENDOR: "Vendor",
-  INTERNAL: "Internal",
-};
-const METHOD_LABEL: Record<string, string> = {
-  transfer: "Transfer Bank",
-  cash: "Tunai",
-  ewallet: "E-Wallet",
-  cheque: "Cek",
-};
+const TYPE_LABEL: Record<string, string> = { FREELANCER: "Freelancer", VENDOR: "Vendor", INTERNAL: "Internal" };
+const METHOD_LABEL: Record<string, string> = { transfer: "Transfer Bank", cash: "Tunai", ewallet: "E-Wallet", cheque: "Cek" };
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return new NextResponse("Unauthorized", { status: 401 });
 
   const { id } = await params;
   const receipt = await prisma.paymentReceipt.findUnique({
     where: { id },
-    include: {
-      partner: true,
-      lineItems: { orderBy: { order: "asc" } },
-      paymentProof: true,
-    },
+    include: { partner: true, lineItems: { orderBy: { order: "asc" } }, paymentProof: true },
   });
   if (!receipt) return new NextResponse("Not found", { status: 404 });
 
@@ -53,41 +29,36 @@ export async function GET(
 
   const proof = receipt.paymentProof[0] ?? null;
   const origin = request.nextUrl.origin;
+  // proof.path sudah berisi URL lengkap (blob URL atau local path)
   const proofUrl = proof
-    ? `${origin}/uploads/payment-proofs/${proof.filename}`
+    ? proof.path.startsWith("http")
+      ? proof.path                                    // Vercel Blob — URL absolut
+      : `${origin}${proof.path}`                     // local — tambah origin
     : null;
   const isImageProof = proof && proof.mimeType.startsWith("image/");
   const isPdfProof = proof && proof.mimeType === "application/pdf";
 
   // Layout 2 kolom kalau ada foto bukti — hemat ruang vertikal signifikan
-  const proofHTML = proof
-    ? `
+  const proofHTML = proof ? `
   <div class="proof-section">
     <div class="section-label">Bukti Transfer</div>
-    ${
-      isImageProof
-        ? `<div class="proof-image-box"><img src="${proofUrl}" alt="Bukti transfer" /></div>`
-        : isPdfProof
-          ? `<div class="proof-pdf-box">
+    ${isImageProof
+      ? `<div class="proof-image-box"><img src="${proofUrl}" alt="Bukti transfer" /></div>`
+      : isPdfProof
+        ? `<div class="proof-pdf-box">
             <div class="pdf-icon">PDF</div>
             <span>Bukti transfer (PDF) terlampir</span>
           </div>`
-          : ""
-    }
-  </div>`
-    : "";
+        : ""}
+  </div>` : "";
 
-  const lineItemsHTML = receipt.lineItems
-    .map(
-      (item) => `
+  const lineItemsHTML = receipt.lineItems.map((item) => `
     <tr>
       <td class="desc">${item.description}</td>
       <td class="center">${Number(item.quantity)}</td>
       <td class="right">${formatIDR(Number(item.unitPrice))}</td>
       <td class="right bold">${formatIDR(Number(item.totalPrice))}</td>
-    </tr>`,
-    )
-    .join("");
+    </tr>`).join("");
 
   // Kolom kanan (sidebar) hanya dipakai kalau ada bukti foto, supaya layout tetap rapi tanpa foto
   const hasProofImage = isImageProof;
@@ -203,11 +174,9 @@ export async function GET(
       <div class="partner-name">${receipt.partner.name}</div>
       <div class="partner-type">${TYPE_LABEL[receipt.partner.type] ?? receipt.partner.type}</div>
       ${receipt.partner.email ? `<div class="partner-detail">${receipt.partner.email}</div>` : ""}
-      ${
-        receipt.partner.bankName && receipt.partner.bankAccount
-          ? `<div class="partner-detail">${receipt.partner.bankName} · <strong>${receipt.partner.bankAccount}</strong></div>`
-          : ""
-      }
+      ${receipt.partner.bankName && receipt.partner.bankAccount
+      ? `<div class="partner-detail">${receipt.partner.bankName} · <strong>${receipt.partner.bankAccount}</strong></div>`
+      : ""}
     </div>
     <div class="total-due">
       <div class="section-label">Total Dibayar</div>
@@ -266,15 +235,11 @@ export async function GET(
     </div>
   </div>
 
-  ${
-    receipt.notes
-      ? `
+  ${receipt.notes ? `
   <div class="notes-section">
     <div class="desc-label">Catatan</div>
     <div class="desc-text">${receipt.notes}</div>
-  </div>`
-      : ""
-  }
+  </div>` : ""}
 
   <div class="footer">
     Generated by ${COMPANY.name} · PayDoc · ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}

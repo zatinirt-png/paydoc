@@ -6,14 +6,22 @@ import PaymentReceiptPreview from "@/components/receipt/PaymentReceiptPreview";
 import ProofUploader from "@/components/receipt/ProofUploader";
 import DownloadReceiptButton from "./DownloadReceiptButton";
 
-const STATUS_STYLE: Record<string, string> = {
+type ReceiptStatus = "DRAFT" | "ISSUED" | "PAID" | "CANCELLED";
+
+type ReceiptTransition = {
+    label: string;
+    next: ReceiptStatus;
+    style: string;
+};
+
+const STATUS_STYLE: Record<ReceiptStatus, string> = {
     DRAFT: "bg-gray-100 text-gray-600",
     ISSUED: "bg-blue-100 text-blue-700",
     PAID: "bg-green-100 text-green-700",
     CANCELLED: "bg-gray-100 text-gray-400",
 };
 
-const TRANSITIONS: Record<string, { label: string; next: string; style: string }[]> = {
+const TRANSITIONS: Record<ReceiptStatus, ReceiptTransition[]> = {
     DRAFT: [
         { label: "Terbitkan", next: "ISSUED", style: "bg-[#1a1f5e] text-white border-[#1a1f5e] hover:bg-[#252b7a]" },
         { label: "Batalkan", next: "CANCELLED", style: "bg-white text-red-500 border-red-200 hover:bg-red-50" },
@@ -61,7 +69,7 @@ export default async function ReceiptDetailPage({
         })),
         totalAmount: Number(receipt.totalAmount),
         notes: receipt.notes,
-        proofUrl: proof ? `/uploads/payment-proofs/${proof.filename}` : null,
+        proofUrl: proof ? proof.path : null,
         proofMimeType: proof?.mimeType ?? null,
     };
 
@@ -101,7 +109,7 @@ export default async function ReceiptDetailPage({
                     {transitions.map((t) => (
                         <form key={t.next} action={async () => {
                             "use server";
-                            await updateReceiptStatus(id, t.next as any);
+                            await updateReceiptStatus(id, t.next);
                         }}>
                             <button type="submit"
                                 className={`px-4 py-2 text-sm font-semibold rounded-lg border transition-colors ${t.style}`}>
@@ -128,7 +136,7 @@ export default async function ReceiptDetailPage({
                         receiptId={id}
                         existingProof={{
                             id: proof.id,
-                            url: `/uploads/payment-proofs/${proof.filename}`,
+                            url: proof.path,
                             mimeType: proof.mimeType,
                             originalName: proof.originalName,
                         }}
