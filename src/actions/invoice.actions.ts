@@ -3,6 +3,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { InvoiceStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { generateDocNumber } from "@/lib/utils";
@@ -46,42 +47,77 @@ function calcTotals(items: InvoiceInput["lineItems"], taxPercent: number) {
 // ── CREATE ───────────────────────────────────
 
 export async function createInvoice(
-  input: InvoiceInput
+  input: InvoiceInput,
 ): Promise<ActionResult<{ id: string; invoiceNo: string }>> {
   try {
     const session = await requireSession();
     const parsed = InvoiceSchema.safeParse(input);
     if (!parsed.success) {
-      return { success: false, error: "Validasi gagal.", fields: parsed.error.flatten().fieldErrors as Record<string, string[]> };
+      return {
+        success: false,
+        error: "Validasi gagal.",
+        fields: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+      };
     }
 
-    const { clientId, projectId, issueDate, dueDate, currency, taxPercent, notes, terms, lineItems } = parsed.data;
-    const { subtotal, taxAmount, totalAmount } = calcTotals(lineItems, taxPercent);
+    const {
+      clientId,
+      projectId,
+      issueDate,
+      dueDate,
+      currency,
+      taxPercent,
+      notes,
+      terms,
+      lineItems,
+    } = parsed.data;
+    const { subtotal, taxAmount, totalAmount } = calcTotals(
+      lineItems,
+      taxPercent,
+    );
     const invoiceNo = await generateInvoiceNo();
 
-    const invoice = await prisma.$transaction(async (tx) => {
+    const invoice = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const inv = await tx.invoice.create({
         data: {
-          invoiceNo, issueDate: new Date(issueDate),
+          invoiceNo,
+          issueDate: new Date(issueDate),
           dueDate: dueDate ? new Date(dueDate) : null,
-          status: "DRAFT", currency, subtotal, taxPercent, taxAmount, totalAmount,
-          notes: notes ?? null, terms: terms ?? null,
-          clientId, projectId: projectId ?? null, createdById: session.sub,
+          status: "DRAFT",
+          currency,
+          subtotal,
+          taxPercent,
+          taxAmount,
+          totalAmount,
+          notes: notes ?? null,
+          terms: terms ?? null,
+          clientId,
+          projectId: projectId ?? null,
+          createdById: session.sub,
         },
       });
+
       await tx.invoiceLineItem.createMany({
         data: lineItems.map((item, idx) => ({
-          invoiceId: inv.id, description: item.description,
-          quantity: item.qty, unitPrice: item.unitPrice,
-          totalPrice: item.qty * item.unitPrice, unit: item.unit ?? null, order: idx,
+          invoiceId: inv.id,
+          description: item.description,
+          quantity: item.qty,
+          unitPrice: item.unitPrice,
+          totalPrice: item.qty * item.unitPrice,
+          unit: item.unit ?? null,
+          order: idx,
         })),
       });
+
       return inv;
     });
 
     revalidatePath("/invoices");
     revalidatePath("/");
-    return { success: true, data: { id: invoice.id, invoiceNo: invoice.invoiceNo } };
+    return {
+      success: true,
+      data: { id: invoice.id, invoiceNo: invoice.invoiceNo },
+    };
   } catch (err) {
     console.error("[createInvoice]", err);
     return { success: false, error: "Gagal menyimpan invoice." };
@@ -92,38 +128,72 @@ export async function createInvoice(
 
 export async function updateInvoice(
   invoiceId: string,
-  input: InvoiceInput
+  input: InvoiceInput,
 ): Promise<ActionResult<{ id: string }>> {
   try {
     await requireSession();
     const parsed = InvoiceSchema.safeParse(input);
     if (!parsed.success) {
-      return { success: false, error: "Validasi gagal.", fields: parsed.error.flatten().fieldErrors as Record<string, string[]> };
+      return {
+        success: false,
+        error: "Validasi gagal.",
+        fields: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+      };
     }
 
-    const existing = await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { status: true } });
+    const existing = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { status: true },
+    });
     if (!existing) return { success: false, error: "Invoice tidak ditemukan." };
-    if (existing.status !== "DRAFT") return { success: false, error: "Hanya invoice DRAFT yang bisa diedit." };
+    if (existing.status !== "DRAFT")
+      return { success: false, error: "Hanya invoice DRAFT yang bisa diedit." };
 
-    const { clientId, projectId, issueDate, dueDate, currency, taxPercent, notes, terms, lineItems } = parsed.data;
-    const { subtotal, taxAmount, totalAmount } = calcTotals(lineItems, taxPercent);
+    const {
+      clientId,
+      projectId,
+      issueDate,
+      dueDate,
+      currency,
+      taxPercent,
+      notes,
+      terms,
+      lineItems,
+    } = parsed.data;
+    const { subtotal, taxAmount, totalAmount } = calcTotals(
+      lineItems,
+      taxPercent,
+    );
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.invoiceLineItem.deleteMany({ where: { invoiceId } });
+
       await tx.invoice.update({
         where: { id: invoiceId },
         data: {
-          issueDate: new Date(issueDate), dueDate: dueDate ? new Date(dueDate) : null,
-          currency, subtotal, taxPercent, taxAmount, totalAmount,
-          notes: notes ?? null, terms: terms ?? null,
-          clientId, projectId: projectId ?? null,
+          issueDate: new Date(issueDate),
+          dueDate: dueDate ? new Date(dueDate) : null,
+          currency,
+          subtotal,
+          taxPercent,
+          taxAmount,
+          totalAmount,
+          notes: notes ?? null,
+          terms: terms ?? null,
+          clientId,
+          projectId: projectId ?? null,
         },
       });
+
       await tx.invoiceLineItem.createMany({
         data: lineItems.map((item, idx) => ({
-          invoiceId, description: item.description,
-          quantity: item.qty, unitPrice: item.unitPrice,
-          totalPrice: item.qty * item.unitPrice, unit: item.unit ?? null, order: idx,
+          invoiceId,
+          description: item.description,
+          quantity: item.qty,
+          unitPrice: item.unitPrice,
+          totalPrice: item.qty * item.unitPrice,
+          unit: item.unit ?? null,
+          order: idx,
         })),
       });
     });
@@ -142,7 +212,7 @@ export async function updateInvoice(
 
 export async function updateInvoiceStatus(
   invoiceId: string,
-  status: "DRAFT" | "SENT" | "PAID" | "OVERDUE" | "CANCELLED"
+  status: "DRAFT" | "SENT" | "PAID" | "OVERDUE" | "CANCELLED",
 ): Promise<ActionResult> {
   try {
     await requireSession();
@@ -161,9 +231,13 @@ export async function updateInvoiceStatus(
 export async function deleteInvoice(invoiceId: string): Promise<ActionResult> {
   try {
     await requireSession();
-    const inv = await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { status: true } });
+    const inv = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { status: true },
+    });
     if (!inv) return { success: false, error: "Invoice tidak ditemukan." };
-    if (inv.status !== "DRAFT") return { success: false, error: "Hanya DRAFT yang bisa dihapus." };
+    if (inv.status !== "DRAFT")
+      return { success: false, error: "Hanya DRAFT yang bisa dihapus." };
     await prisma.invoice.delete({ where: { id: invoiceId } });
     revalidatePath("/invoices");
     revalidatePath("/");
@@ -175,10 +249,13 @@ export async function deleteInvoice(invoiceId: string): Promise<ActionResult> {
 
 // ── QUERIES ───────────────────────────────────
 
-export async function getInvoices(filters?: { status?: string; clientId?: string }) {
+export async function getInvoices(filters?: {
+  status?: InvoiceStatus;
+  clientId?: string;
+}) {
   return prisma.invoice.findMany({
     where: {
-      ...(filters?.status ? { status: filters.status as any } : {}),
+      ...(filters?.status ? { status: filters.status } : {}),
       ...(filters?.clientId ? { clientId: filters.clientId } : {}),
     },
     include: {
