@@ -1,0 +1,239 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// Auth
+// ─────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(STAFF)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices        Invoice[]
+  paymentReceipts PaymentReceipt[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+// ─────────────────────────────────────────────
+// Clients (penerima invoice)
+// ─────────────────────────────────────────────
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  taxId     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices Invoice[]
+
+  @@map("clients")
+}
+
+// ─────────────────────────────────────────────
+// Partners (freelancer / vendor / internal)
+// ─────────────────────────────────────────────
+
+model Partner {
+  id          String      @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  bankName    String?
+  bankAccount String?
+  taxId       String?
+  type        PartnerType @default(VENDOR)
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  paymentReceipts PaymentReceipt[]
+
+  @@map("partners")
+}
+
+enum PartnerType {
+  FREELANCER
+  VENDOR
+  INTERNAL
+}
+
+// ─────────────────────────────────────────────
+// Projects
+// ─────────────────────────────────────────────
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  invoices        Invoice[]
+  paymentReceipts PaymentReceipt[]
+
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// ─────────────────────────────────────────────
+// Invoices
+// ─────────────────────────────────────────────
+
+model Invoice {
+  id          String        @id @default(cuid())
+  invoiceNo   String        @unique
+  issueDate   DateTime      @default(now())
+  dueDate     DateTime?
+  status      InvoiceStatus @default(DRAFT)
+  currency    String        @default("IDR")
+  subtotal    Decimal       @db.Decimal(18, 2)
+  taxPercent  Decimal       @default(0) @db.Decimal(5, 2)
+  taxAmount   Decimal       @default(0) @db.Decimal(18, 2)
+  totalAmount Decimal       @db.Decimal(18, 2)
+  notes       String?
+  terms       String?
+
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id])
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  lineItems    InvoiceLineItem[]
+  paymentProof PaymentProof[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model InvoiceLineItem {
+  id          String  @id @default(cuid())
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(18, 2)
+  totalPrice  Decimal @db.Decimal(18, 2)
+  unit        String?
+  order       Int     @default(0)
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_line_items")
+}
+
+// ─────────────────────────────────────────────
+// Payment Receipts
+// ─────────────────────────────────────────────
+
+model PaymentReceipt {
+  id            String               @id @default(cuid())
+  receiptNo     String               @unique
+  issueDate     DateTime             @default(now())
+  status        PaymentReceiptStatus @default(DRAFT)
+  currency      String               @default("IDR")
+  totalAmount   Decimal              @db.Decimal(18, 2)
+  description   String
+  paymentMethod String?
+  paymentDate   DateTime?
+  notes         String?
+
+  partnerId   String
+  partner     Partner  @relation(fields: [partnerId], references: [id])
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id])
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  lineItems    PaymentReceiptLineItem[]
+  paymentProof PaymentProof[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_receipts")
+}
+
+enum PaymentReceiptStatus {
+  DRAFT
+  ISSUED
+  PAID
+  CANCELLED
+}
+
+model PaymentReceiptLineItem {
+  id          String  @id @default(cuid())
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(18, 2)
+  totalPrice  Decimal @db.Decimal(18, 2)
+  unit        String?
+  order       Int     @default(0)
+
+  paymentReceiptId String
+  paymentReceipt   PaymentReceipt @relation(fields: [paymentReceiptId], references: [id], onDelete: Cascade)
+
+  @@map("payment_receipt_line_items")
+}
+
+// ─────────────────────────────────────────────
+// Payment Proof (file attachments)
+// ─────────────────────────────────────────────
+
+model PaymentProof {
+  id           String   @id @default(cuid())
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  path         String
+  uploadedAt   DateTime @default(now())
+
+  invoiceId        String?
+  invoice          Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  paymentReceiptId String?
+  paymentReceipt   PaymentReceipt? @relation(fields: [paymentReceiptId], references: [id], onDelete: Cascade)
+
+  @@map("payment_proofs")
+}
