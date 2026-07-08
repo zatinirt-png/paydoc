@@ -22,6 +22,7 @@
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
@@ -39,5 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Uploads — file user, jangan di-push
+public/uploads/payment-proofs/*
+!public/uploads/payment-proofs/.gitkeep
 
 /src/generated/prisma
